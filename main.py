@@ -1,13 +1,24 @@
+import requests
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 from plotly.subplots import make_subplots
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 import os
 import calendar
+from plotly_calplot import calplot
+import plotly.express as px
 
 DAILY_LOG_FILE = 'daily_reading_log.csv'
 YEAR = datetime.now().year
+
+
+def day_of_the_week_boxplot(df):
+    df['date'] = pd.to_datetime(df['date'])
+    df['day_of_week'] = df['date'].dt.day_name()
+    fig = px.box(df, x='day_of_week', y='pages',
+                 title='Pages Read Distribution by Day of the Week')
+    return fig
 
 
 def log_daily_reading(daily_log, log_date, pages):
@@ -23,7 +34,7 @@ def calculate_streak(df, daily_goal):
     df['streak'] = ((df['pages'] >= daily_goal) & (
         df['date'].diff().dt.days == 1)).cumsum()
     current_streak = df['streak'].iloc[-1] if df['pages'].iloc[-1] >= daily_goal else 0
-    return current_streak, df['streak'].max()
+    return current_streak+1, df['streak'].max()+1
 
 
 def get_daily_stats(daily_log):
@@ -166,18 +177,117 @@ if not st.session_state.daily_log.empty:
     col4.markdown(f":orange[**{max_streak} days**]")
     col5.markdown(f":green[**{(df_daily_log_grouped['pages']
                   >= daily_goal).sum()} / {len(df_daily_log_grouped)}**]")
-    col6.markdown(f":blue[**{daily_stats['avg_pages_per_day']
-                  :.2f} ({daily_stats['avg_pages_last_week']:.2f})**]")
+    col6.markdown(f":blue[**{daily_stats['avg_pages_per_day']:.2f} ({daily_stats['avg_pages_last_week']:.2f})**]")
 
-    # st.plotly_chart(
-    #     create_daily_pages_chart(df_daily_log_grouped),
-    #     use_container_width=True
-    # )
     st.plotly_chart(
-        create_heatmap_view(df_daily_log_grouped),
+        calplot(df_daily_log_grouped, x='date',
+                y='pages', gap=2, name='Pages', dark_theme=False),
         use_container_width=True
     )
+    st.plotly_chart(day_of_the_week_boxplot(
+        df_daily_log_grouped), use_container_width=True)
 
 
 else:
     st.info("No daily reading log entries yet.")
+
+
+df_books = pd.read_csv('my_books.csv')
+
+# Select relevant columns
+selected_columns = ['Title', 'Author', 'Exclusive Shelf']
+df_selected_books = df_books[selected_columns]
+
+# Function to search for book information using the Open Library API
+
+
+def search_book_info(title):
+    url = f'https://openlibrary.org/search.json?title={title}'
+    response = requests.get(url)
+    if response.status_code == 200:
+        data = response.json()
+        if data['docs']:
+            book_info = data['docs'][0]
+            cover_id = book_info.get('cover_i', None)
+            return {
+                'raw_info': url,
+                'url': f'https://openlibrary.org{book_info["key"]}',
+                'title': book_info.get('title', ''),
+                'author': ', '.join(book_info.get('author_name', [])),
+                'cover_url': f'https://covers.openlibrary.org/b/id/{cover_id}-L.jpg' if cover_id else None
+            }
+    return None
+
+# Function to get the book cover URL using the Open Library Covers API
+
+
+# Display the table using Streamlit
+st.title('My Books Collection')
+
+# Create a single table for all books
+with st.container():
+    st.subheader('All Books')
+    st.data_editor(df_selected_books, num_rows='dynamic', use_container_width=True
+                   )
+
+
+# Add Book Form
+st.subheader('Find and Add a New Book')
+with st.form(key='add_book'):
+    search_title = st.text_input('Search Title', key='search_title')
+    search_button = st.form_submit_button(label='Search')
+    st.markdown('---')
+    if search_button:
+        book_info = search_book_info(search_title)
+        if book_info:
+            st.session_state['raw_info'] = book_info['raw_info']
+            st.session_state['url'] = book_info['url']
+            st.session_state['title'] = book_info['title']
+            st.session_state['author'] = book_info['author']
+            st.session_state['cover_url'] = book_info['cover_url']
+        else:
+            st.warning('Book not found')
+
+    title = st.text_input('Title', key='title')
+    author = st.text_input('Author', key='author')
+
+    if st.session_state.get('cover_url'):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.image(st.session_state['cover_url'], width=150)
+        with col2:
+            st.link_button(
+                'Raw Info', url=st.session_state['raw_info'] if 'raw_info' in st.session_state else '')
+            st.link_button(
+                'Open Library', url=st.session_state['url'] if 'url' in st.session_state else '')
+    else:
+        st.link_button(
+            'Raw Info', url=st.session_state['raw_info'] if 'raw_info' in st.session_state else '')
+        st.link_button(
+            'Open Library', url=st.session_state['url'] if 'url' in st.session_state else '')
+    st.markdown('---')
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        read_button = st.form_submit_button(label='Add to Read Books')
+    with col2:
+        currently_reading_button = st.form_submit_button(
+            label='Add to Currently Reading Books')
+    with col3:
+        to_read_button = st.form_submit_button(label='Add to To Read Books')
+
+    def add_book(shelf, df_books):
+        new_row = pd.DataFrame({'Title': [title], 'Author': [
+                               author], 'Exclusive Shelf': [shelf]})
+        df_books = pd.concat([df_books, new_row], ignore_index=True)
+        df_books.to_csv('my_books.csv', index=False)
+        st.success(f'Book added to {shelf.capitalize()} Books')
+        st.rerun()
+
+    if read_button:
+        add_book('read', df_books)
+
+    if currently_reading_button:
+        add_book('currently-reading', df_books)
+
+    if to_read_button:
+        add_book('to-read', df_books)
