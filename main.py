@@ -177,7 +177,8 @@ if not st.session_state.daily_log.empty:
     col4.markdown(f":orange[**{max_streak} days**]")
     col5.markdown(f":green[**{(df_daily_log_grouped['pages']
                   >= daily_goal).sum()} / {len(df_daily_log_grouped)}**]")
-    col6.markdown(f":blue[**{daily_stats['avg_pages_per_day']:.2f} ({daily_stats['avg_pages_last_week']:.2f})**]")
+    col6.markdown(f":blue[**{daily_stats['avg_pages_per_day']
+                  :.2f} ({daily_stats['avg_pages_last_week']:.2f})**]")
 
     st.plotly_chart(
         calplot(df_daily_log_grouped, x='date',
@@ -236,36 +237,35 @@ st.subheader('Find and Add a New Book')
 with st.form(key='add_book'):
     search_title = st.text_input('Search Title', key='search_title')
     search_button = st.form_submit_button(label='Search')
-    st.markdown('---')
-    if search_button:
-        book_info = search_book_info(search_title)
-        if book_info:
-            st.session_state['raw_info'] = book_info['raw_info']
-            st.session_state['url'] = book_info['url']
-            st.session_state['title'] = book_info['title']
-            st.session_state['author'] = book_info['author']
-            st.session_state['cover_url'] = book_info['cover_url']
-        else:
-            st.warning('Book not found')
-
-    title = st.text_input('Title', key='title')
-    author = st.text_input('Author', key='author')
-
-    if st.session_state.get('cover_url'):
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(st.session_state['cover_url'], width=150)
-        with col2:
-            st.link_button(
-                'Raw Info', url=st.session_state['raw_info'] if 'raw_info' in st.session_state else '')
-            st.link_button(
-                'Open Library', url=st.session_state['url'] if 'url' in st.session_state else '')
+if search_button:
+    book_info = search_book_info(search_title)
+    if book_info:
+        st.session_state['raw_info'] = book_info['raw_info']
+        st.session_state['url'] = book_info['url']
+        st.session_state['title'] = book_info['title']
+        st.session_state['author'] = book_info['author']
+        st.session_state['cover_url'] = book_info['cover_url']
     else:
+        st.warning('Book not found')
+
+title = st.text_input('Title', key='title')
+author = st.text_input('Author', key='author')
+
+if st.session_state.get('cover_url'):
+    col1, col2 = st.columns(2)
+    with col1:
+        st.image(st.session_state['cover_url'], width=150)
+    with col2:
         st.link_button(
             'Raw Info', url=st.session_state['raw_info'] if 'raw_info' in st.session_state else '')
         st.link_button(
             'Open Library', url=st.session_state['url'] if 'url' in st.session_state else '')
-    st.markdown('---')
+else:
+    st.link_button(
+        'Raw Info', url=st.session_state['raw_info'] if 'raw_info' in st.session_state else '')
+    st.link_button(
+        'Open Library', url=st.session_state['url'] if 'url' in st.session_state else '')
+with st.form(key='add_book_to_shelf'):
     col1, col2, col3 = st.columns(3)
     with col1:
         read_button = st.form_submit_button(label='Add to Read Books')
@@ -275,19 +275,21 @@ with st.form(key='add_book'):
     with col3:
         to_read_button = st.form_submit_button(label='Add to To Read Books')
 
-    def add_book(shelf, df_books):
-        new_row = pd.DataFrame({'Title': [title], 'Author': [
-                               author], 'Exclusive Shelf': [shelf]})
-        df_books = pd.concat([df_books, new_row], ignore_index=True)
-        df_books.to_csv('my_books.csv', index=False)
-        st.success(f'Book added to {shelf.capitalize()} Books')
-        st.rerun()
 
-    if read_button:
-        add_book('read', df_books)
+def add_book(shelf, df_books):
+    new_row = pd.DataFrame({'Title': [title], 'Author': [
+                            author], 'Exclusive Shelf': [shelf]})
+    df_books = pd.concat([df_books, new_row], ignore_index=True)
+    df_books.to_csv('my_books.csv', index=False)
+    st.success(f'Book added to {shelf.capitalize()} Books')
+    st.rerun()
 
-    if currently_reading_button:
-        add_book('currently-reading', df_books)
 
-    if to_read_button:
-        add_book('to-read', df_books)
+if read_button:
+    add_book('read', df_books)
+
+if currently_reading_button:
+    add_book('currently-reading', df_books)
+
+if to_read_button:
+    add_book('to-read', df_books)
